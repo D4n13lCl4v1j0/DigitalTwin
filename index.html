@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Gemelo Digital</title>
+
+<style>
+body {
+  font-family: Arial;
+  background: #0f172a;
+  color: white;
+  margin: 0;
+  padding: 20px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.card {
+  background: #1e293b;
+  padding: 10px;
+  border-radius: 10px;
+  flex: 1;
+}
+
+.bar {
+  height: 10px;
+  background: #334155;
+  border-radius: 5px;
+}
+
+.bar-inner {
+  height: 10px;
+  border-radius: 5px;
+}
+
+.ok { background: limegreen; }
+.warn { background: orange; }
+.danger { background: red; }
+
+canvas {
+  background: #020617;
+  border-radius: 10px;
+}
+
+#log {
+  height: 200px;
+  overflow-y: auto;
+  background: #020617;
+  padding: 10px;
+  font-size: 12px;
+}
+
+button {
+  padding: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+</style>
+</head>
+
+<body>
+
+<h2>🚀 Gemelo Digital</h2>
+
+<button onclick="toggleSim()">▶️ Play / Pause</button>
+
+<h3>Centros de Distribución</h3>
+<div class="row" id="cds"></div>
+
+<h3>Red Logística</h3>
+<canvas id="network" width="900" height="350"></canvas>
+
+<h3>Estaciones de Entrega</h3>
+<div class="row" id="ees"></div>
+
+<h3>Logs</h3>
+<div id="log"></div>
+
+<script>
+
+// =====================
+// MODELOS
+// =====================
+class CD {
+  constructor(nombre, stock, seguridad) {
+    this.nombre = nombre;
+    this.stock = stock;
+    this.seguridad = seguridad;
+    this.pendiente = false;
+  }
+}
+
+class CC {
+  constructor(nombre) {
+    this.nombre = nombre;
+  }
+}
+
+class EE {
+  constructor(nombre, demanda) {
+    this.nombre = nombre;
+    this.demanda = demanda;
+  }
+}
+
+// =====================
+// DATA
+// =====================
+const cds = [
+  new CD("CD1",1000,500),
+  new CD("CD2",1000,500),
+  new CD("CD3",1000,500),
+  new CD("CD4",1000,500),
+  new CD("CD5",1000,500)
+];
+
+const ccs = [
+  new CC("CC1"),
+  new CC("CC2"),
+  new CC("CC3")
+];
+
+const ees = [
+  new EE("EE1",3000),
+  new EE("EE2",3000),
+  new EE("EE3",3000),
+  new EE("EE4",3000),
+  new EE("EE5",3000)
+];
+
+let hora = 0;
+let running = false;
+let animando = false;
+
+// =====================
+// POSICIONES
+// =====================
+const pos = {
+  proveedor: { x: 50, y: 180 },
+  cds: cds.map((_,i)=>({x:120,y:50+i*60})),
+  ccs: ccs.map((_,i)=>({x:450,y:80+i*80})),
+  ees: ees.map((_,i)=>({x:800,y:50+i*60}))
+};
+
+// =====================
+// UI
+// =====================
+function render() {
+  document.getElementById("cds").innerHTML = cds.map(cd=>{
+    let cls="ok";
+    let mensaje="";
+
+    if(cd.stock <= cd.seguridad){
+      cls="danger";
+      mensaje = cd.pendiente ? "📦 Reposición en camino" : "⚠️ Solicitando proveedor";
+    } 
+    else if(cd.stock < cd.seguridad * 1.5){
+      cls="warn";
+      mensaje = "⚠️ Stock medio";
+    }
+
+    return `
+    <div class="card">
+      <b>${cd.nombre}</b>
+      <div>Stock: ${cd.stock}</div>
+
+      <div class="bar">
+        <div class="bar-inner ${cls}" style="width:${cd.stock/1000*100}%"></div>
+      </div>
+
+      <div style="font-size:11px; margin-top:5px;">
+        ${mensaje}
+      </div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("ees").innerHTML = ees.map(ee=>`
+    <div class="card">
+      <b>${ee.nombre}</b>
+      <div>Demanda: ${ee.demanda}</div>
+    </div>
+  `).join("");
+}
+
+// =====================
+// LOG
+// =====================
+function log(msg){
+  const div=document.getElementById("log");
+  div.innerHTML=`[H${hora}] ${msg}<br>`+div.innerHTML;
+}
+
+// =====================
+// CANVAS
+// =====================
+const canvas=document.getElementById("network");
+const ctx=canvas.getContext("2d");
+
+function drawBase(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  drawNode(pos.proveedor,"white","PROV");
+
+  cds.forEach((cd,i)=>{
+    drawNode(pos.cds[i],"cyan",cd.nombre);
+  });
+
+  ccs.forEach((cc,i)=>{
+    drawNode(pos.ccs[i],"yellow",cc.nombre);
+  });
+
+  ees.forEach((ee,i)=>{
+    drawNode(pos.ees[i],"orange",ee.nombre);
+  });
+}
+
+function drawNode(p,color,text){
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.arc(p.x,p.y,10,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillText(text,p.x-20,p.y-15);
+}
+
+// =====================
+// ANIMACIÓN CONTROLADA
+// =====================
+function animateRoute(points, callback){
+  animando = true;
+
+  let segment = 0;
+  let t = 0;
+
+  function stepAnim(){
+    drawBase();
+
+    // dibujar toda la ruta
+    ctx.strokeStyle="lime";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+
+    for(let i=1;i<points.length;i++){
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+
+    ctx.stroke();
+
+    // animar segmento actual
+    const p1 = points[segment];
+    const p2 = points[segment + 1];
+
+    const x = p1.x + (p2.x - p1.x) * t;
+    const y = p1.y + (p2.y - p1.y) * t;
+
+    ctx.fillStyle="white";
+    ctx.beginPath();
+    ctx.arc(x,y,6,0,Math.PI*2);
+    ctx.fill();
+
+    t += 0.05;
+
+    if(t >= 1){
+      t = 0;
+      segment++;
+
+      // si terminó todos los segmentos
+      if(segment >= points.length - 1){
+        animando = false;
+        if(callback) callback();
+        return;
+      }
+    }
+
+    requestAnimationFrame(stepAnim);
+  }
+
+  stepAnim();
+}
+
+// =====================
+// PROVEEDOR
+// =====================
+function proveedor(cd, index){
+  if(cd.pendiente) return;
+
+  cd.pendiente = true;
+
+  log(`📦 proveedor → ${cd.nombre}`);
+
+  animateRoute([
+    pos.proveedor,
+    pos.cds[index]
+  ]);
+
+  setTimeout(()=>{
+    cd.stock += 500;
+    cd.pendiente = false;
+    log(`✅ reposición ${cd.nombre}`);
+  },24000);
+}
+
+// =====================
+// SIMULACIÓN
+// =====================
+function step(){
+  if(animando) return; // 🔥 evita saltos
+
+  hora++;
+
+  const iCD=Math.floor(Math.random()*cds.length);
+  const cd=cds[iCD];
+
+  if(cd.stock>cd.seguridad){
+
+    const usarCC=Math.random()>0.5;
+    let cantidad = Math.floor(Math.random() * 100) + 1;
+
+    // 🔥 buscar EE válido
+    let ee = getEEValido(cantidad);
+
+    // si no existe EE válido, no hacer nada
+    if(!ee){
+    log(`⚠️ Sin demanda suficiente`);
+     return;
+    }
+
+    // obtener índice real
+    const iEE = ees.indexOf(ee);
+
+    // ajustar por stock del CD
+    cantidad = Math.min(cantidad, cd.stock);
+
+    if(cantidad>0){
+
+      cd.stock-=cantidad;
+      ee.demanda-=cantidad;
+
+      if(usarCC){
+        const iCC=Math.floor(Math.random()*ccs.length);
+
+        animateRoute([
+          pos.cds[iCD],
+          pos.ccs[iCC],
+          pos.ees[iEE]
+        ]);
+
+        log(`${cd.nombre} → ${ccs[iCC].nombre} → ${ee.nombre} : ${cantidad}`);
+
+      }else{
+
+        animateRoute([
+          pos.cds[iCD],
+          pos.ees[iEE]
+        ]);
+
+        log(`${cd.nombre} → ${ee.nombre} : ${cantidad}`);
+      }
+    }
+
+  }else{
+    proveedor(cd, iCD);
+  }
+
+  render();
+}
+
+function getEEValido(cantidad){
+  const candidatos = ees.filter(ee => ee.demanda >= cantidad);
+
+  if(candidatos.length === 0) return null;
+
+  return candidatos[Math.floor(Math.random() * candidatos.length)];
+}
+
+// =====================
+// LOOP CONTROLADO
+// =====================
+function loop(){
+  if(running && !animando){
+    step();
+  }
+  setTimeout(loop, 2000);
+}
+
+function toggleSim(){
+  running = !running;
+}
+
+// =====================
+render();
+drawBase();
+loop();
+
+</script>
+
+</body>
+</html>
