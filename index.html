@@ -64,9 +64,9 @@ button {
 
 <body>
 
-<h2>🚀 Gemelo Digital</h2>
+<h2>Gemelo Digital</h2>
 
-<button onclick="toggleSim()">▶️ Play / Pause</button>
+<button onclick="toggleSim()">Play / Pause</button>
 
 <h3>Centros de Distribución</h3>
 <div class="row" id="cds"></div>
@@ -111,11 +111,11 @@ class EE {
 // DATA
 // =====================
 const cds = [
-  new CD("CD1",1000,500),
-  new CD("CD2",1000,500),
-  new CD("CD3",1000,500),
-  new CD("CD4",1000,500),
-  new CD("CD5",1000,500)
+  new CD("CD1",550,500),
+  new CD("CD2",550,500),
+  new CD("CD3",550,500),
+  new CD("CD4",550,500),
+  new CD("CD5",550,500)
 ];
 
 const ccs = [
@@ -156,11 +156,11 @@ function render() {
 
     if(cd.stock <= cd.seguridad){
       cls="danger";
-      mensaje = cd.pendiente ? "📦 Reposición en camino" : "⚠️ Solicitando proveedor";
+      mensaje = cd.pendiente ? "Reposición en camino" : "Solicitando proveedor";
     } 
     else if(cd.stock < cd.seguridad * 1.5){
       cls="warn";
-      mensaje = "⚠️ Stock medio";
+      mensaje = "Stock medio";
     }
 
     return `
@@ -289,7 +289,7 @@ function proveedor(cd, index){
 
   cd.pendiente = true;
 
-  log(`📦 proveedor → ${cd.nombre}`);
+  log(`proveedor → ${cd.nombre}`);
 
   animateRoute([
     pos.proveedor,
@@ -299,7 +299,7 @@ function proveedor(cd, index){
   setTimeout(()=>{
     cd.stock += 500;
     cd.pendiente = false;
-    log(`✅ reposición ${cd.nombre}`);
+    log(`reposición ${cd.nombre}`);
   },24000);
 }
 
@@ -307,24 +307,23 @@ function proveedor(cd, index){
 // SIMULACIÓN
 // =====================
 function step(){
-  if(animando) return; // 🔥 evita saltos
+  if(animando) return;
 
   hora++;
 
   const iCD=Math.floor(Math.random()*cds.length);
   const cd=cds[iCD];
 
-  if(cd.stock>cd.seguridad){
+  if(cd.stock>cd.seguridad || cd.pendiente){
 
     const usarCC=Math.random()>0.5;
     let cantidad = Math.floor(Math.random() * 100) + 1;
 
-    // 🔥 buscar EE válido
     let ee = getEEValido(cantidad);
 
     // si no existe EE válido, no hacer nada
     if(!ee){
-    log(`⚠️ Sin demanda suficiente`);
+    log(`Sin demanda suficiente`);
      return;
     }
 
