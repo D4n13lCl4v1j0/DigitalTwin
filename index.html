@@ -3,69 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <title>Gemelo Digital</title>
-
 <style>
-body {
-  font-family: Arial;
-  background: #0f172a;
-  color: white;
-  margin: 0;
-  padding: 20px;
-}
-
-.row {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.card {
-  background: #1e293b;
-  padding: 10px;
-  border-radius: 10px;
-  flex: 1;
-}
-
-.bar {
-  height: 10px;
-  background: #334155;
-  border-radius: 5px;
-}
-
-.bar-inner {
-  height: 10px;
-  border-radius: 5px;
-}
-
-.ok { background: limegreen; }
-.warn { background: orange; }
-.danger { background: red; }
-
-canvas {
-  background: #020617;
-  border-radius: 10px;
-}
-
-#log {
-  height: 200px;
-  overflow-y: auto;
-  background: #020617;
-  padding: 10px;
-  font-size: 12px;
-}
-
-button {
-  padding: 10px;
-  margin-bottom: 10px;
-  cursor: pointer;
-}
+body { font-family: Arial; background: #0f172a; color:white; margin:0; padding:20px; }
+.row { display:flex; gap:10px; margin-bottom:20px; }
+.card { background:#1e293b; padding:10px; border-radius:10px; flex:1; }
+.bar { height:10px; background:#334155; border-radius:5px; }
+.bar-inner { height:10px; border-radius:5px; }
+.ok { background:limegreen; }
+.warn { background:orange; }
+.danger { background:red; }
+canvas { background:#020617; border-radius:10px; }
+#log { height:200px; overflow-y:auto; background:#020617; padding:10px; font-size:12px; }
+button { padding:10px; margin-bottom:10px; cursor:pointer; }
 </style>
 </head>
-
 <body>
 
-<h2>Gemelo Digital</h2>
-
+<h2>Gemelo Digital Logístico</h2>
 <button onclick="toggleSim()">Play / Pause</button>
 
 <h3>Centros de Distribución</h3>
@@ -81,29 +35,26 @@ button {
 <div id="log"></div>
 
 <script>
-
 // =====================
 // MODELOS
 // =====================
 class CD {
-  constructor(nombre, stock, seguridad) {
+  constructor(nombre, stock_seguridad, demanda, EOQ, lead_time, capacidad) {
     this.nombre = nombre;
-    this.stock = stock;
-    this.seguridad = seguridad;
+    this.stock = stock_seguridad;
+    this.Inv = EOQ;
+    this.demanda = demanda;
+    this.EOQ = EOQ;
+    this.lead_time = lead_time;
+    this.capacidad = capacidad;
+    this.ROP = stock_seguridad + (demanda * lead_time);
     this.pendiente = false;
   }
 }
-
-class CC {
-  constructor(nombre) {
-    this.nombre = nombre;
-  }
-}
-
+class CC { constructor(nombre) { this.nombre = nombre; } }
 class EE {
-  constructor(nombre, demanda) {
-    this.nombre = nombre;
-    this.demanda = demanda;
+  constructor(nombre, demanda, capacidad) {
+    this.nombre = nombre; this.demanda = demanda; this.capacidad = capacidad;
   }
 }
 
@@ -111,290 +62,259 @@ class EE {
 // DATA
 // =====================
 const cds = [
-  new CD("CD1",550,500),
-  new CD("CD2",550,500),
-  new CD("CD3",550,500),
-  new CD("CD4",550,500),
-  new CD("CD5",550,500)
+  new CD("CD1-Nuevo León",       123, 2000, 2000, 0.1,  4000),
+  new CD("CD2-Estado de México", 185, 3000, 1897, 0.1,  6000),
+  new CD("CD3-Baja California",  247, 4000, 3347, 0.1,  8000),
+  new CD("CD4-Yucatán",          308, 5000, 2309, 0.1, 10000),
+  new CD("CD5-Jalisco",          339, 5500, 2225, 0.1, 11000)
 ];
-
 const ccs = [
-  new CC("CC1"),
-  new CC("CC2"),
-  new CC("CC3")
+  new CC("CC1-Estado de México"),
+  new CC("CC2-Queretaro"),
+  new CC("CC3-Monterrey")
 ];
-
 const ees = [
-  new EE("EE1",3000),
-  new EE("EE2",3000),
-  new EE("EE3",3000),
-  new EE("EE4",3000),
-  new EE("EE5",3000)
+  new EE("EE1",  7000,  8400),
+  new EE("EE2",  8000,  9600),
+  new EE("EE3",  9000, 10800),
+  new EE("EE4", 10000, 12000),
+  new EE("EE5", 11000, 13200)
 ];
 
 let hora = 0;
 let running = false;
-let animando = false;
 
-// =====================
-// POSICIONES
-// =====================
+// Flag SOLO para animaciones de despacho (no de proveedor)
+let despachando = false;
+
 const pos = {
   proveedor: { x: 50, y: 180 },
-  cds: cds.map((_,i)=>({x:120,y:50+i*60})),
-  ccs: ccs.map((_,i)=>({x:450,y:80+i*80})),
-  ees: ees.map((_,i)=>({x:800,y:50+i*60}))
+  cds: cds.map((_,i) => ({ x: 120, y: 50 + i * 60 })),
+  ccs: ccs.map((_,i) => ({ x: 450, y: 80 + i * 80 })),
+  ees: ees.map((_,i) => ({ x: 800, y: 50 + i * 60 }))
 };
 
 // =====================
 // UI
 // =====================
 function render() {
-  document.getElementById("cds").innerHTML = cds.map(cd=>{
-    let cls="ok";
-    let mensaje="";
-
-    if(cd.stock <= cd.seguridad){
-      cls="danger";
+  document.getElementById("cds").innerHTML = cds.map(cd => {
+    let cls = "ok", mensaje = "";
+    if (cd.Inv <= cd.stock) {
+      cls = "danger";
       mensaje = cd.pendiente ? "Reposición en camino" : "Solicitando proveedor";
-    } 
-    else if(cd.stock < cd.seguridad * 1.5){
-      cls="warn";
-      mensaje = "Stock medio";
+    } else if (cd.Inv < cd.ROP) {
+      cls = "warn";
+      mensaje = cd.pendiente ? "Reposición en camino" : "Stock medio";
     }
-
-    return `
-    <div class="card">
+    return `<div class="card">
       <b>${cd.nombre}</b>
-      <div>Stock: ${cd.stock}</div>
-
-      <div class="bar">
-        <div class="bar-inner ${cls}" style="width:${cd.stock/1000*100}%"></div>
-      </div>
-
-      <div style="font-size:11px; margin-top:5px;">
-        ${mensaje}
-      </div>
+      <div>Inventario: ${Math.round(cd.Inv)}</div>
+      <div>ROP: ${Math.round(cd.ROP)}</div>
+      <div class="bar"><div class="bar-inner ${cls}" style="width:${Math.min(100, cd.Inv/cd.capacidad*100)}%"></div></div>
+      <div style="font-size:11px;margin-top:5px;">${mensaje}</div>
     </div>`;
   }).join("");
 
-  document.getElementById("ees").innerHTML = ees.map(ee=>`
-    <div class="card">
-      <b>${ee.nombre}</b>
-      <div>Demanda: ${ee.demanda}</div>
-    </div>
-  `).join("");
+  document.getElementById("ees").innerHTML = ees.map(ee =>
+    `<div class="card"><b>${ee.nombre}</b><div>Demanda: ${ee.demanda}</div></div>`
+  ).join("");
 }
 
-// =====================
-// LOG
-// =====================
-function log(msg){
-  const div=document.getElementById("log");
-  div.innerHTML=`[H${hora}] ${msg}<br>`+div.innerHTML;
+function log(msg) {
+  const div = document.getElementById("log");
+  div.innerHTML = `[H${hora}] ${msg}<br>` + div.innerHTML;
 }
 
 // =====================
 // CANVAS
 // =====================
-const canvas=document.getElementById("network");
-const ctx=canvas.getContext("2d");
+const canvas = document.getElementById("network");
+const ctx = canvas.getContext("2d");
 
-function drawBase(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  drawNode(pos.proveedor,"white","PROV");
-
-  cds.forEach((cd,i)=>{
-    drawNode(pos.cds[i],"cyan",cd.nombre);
-  });
-
-  ccs.forEach((cc,i)=>{
-    drawNode(pos.ccs[i],"yellow",cc.nombre);
-  });
-
-  ees.forEach((ee,i)=>{
-    drawNode(pos.ees[i],"orange",ee.nombre);
-  });
+function drawBase() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "11px Arial";
+  drawNode(pos.proveedor, "white", "PROV");
+  cds.forEach((cd, i) => drawNode(pos.cds[i], "cyan",   cd.nombre));
+  ccs.forEach((cc, i) => drawNode(pos.ccs[i], "yellow", cc.nombre));
+  ees.forEach((ee, i) => drawNode(pos.ees[i], "orange", ee.nombre));
 }
 
-function drawNode(p,color,text){
-  ctx.fillStyle=color;
-  ctx.beginPath();
-  ctx.arc(p.x,p.y,10,0,Math.PI*2);
-  ctx.fill();
-  ctx.fillText(text,p.x-20,p.y-15);
+function drawNode(p, color, text) {
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "white";
+  ctx.fillText(text, p.x - 20, p.y - 15);
 }
 
 // =====================
-// ANIMACIÓN CONTROLADA
+// ANIMACIÓN DE DESPACHO — bloquea el loop
 // =====================
-function animateRoute(points, callback){
-  animando = true;
+function animateDespacho(points, color, callback) {
+  despachando = true;
+  let segment = 0, t = 0;
 
-  let segment = 0;
-  let t = 0;
-
-  function stepAnim(){
+  function frame() {
     drawBase();
-
-    // dibujar toda la ruta
-    ctx.strokeStyle="lime";
+    ctx.strokeStyle = color || "lime";
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
-
-    for(let i=1;i<points.length;i++){
-      ctx.lineTo(points[i].x, points[i].y);
-    }
-
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
     ctx.stroke();
+    ctx.lineWidth = 1;
 
-    // animar segmento actual
-    const p1 = points[segment];
-    const p2 = points[segment + 1];
-
+    const p1 = points[segment], p2 = points[segment+1];
     const x = p1.x + (p2.x - p1.x) * t;
     const y = p1.y + (p2.y - p1.y) * t;
-
-    ctx.fillStyle="white";
-    ctx.beginPath();
-    ctx.arc(x,y,6,0,Math.PI*2);
-    ctx.fill();
+    ctx.fillStyle = "white";
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fill();
 
     t += 0.05;
-
-    if(t >= 1){
-      t = 0;
-      segment++;
-
-      // si terminó todos los segmentos
-      if(segment >= points.length - 1){
-        animando = false;
-        if(callback) callback();
+    if (t >= 1) {
+      t = 0; segment++;
+      if (segment >= points.length - 1) {
+        despachando = false;
+        if (callback) callback();
         return;
       }
     }
-
-    requestAnimationFrame(stepAnim);
+    requestAnimationFrame(frame);
   }
-
-  stepAnim();
+  frame();
 }
 
 // =====================
-// PROVEEDOR
+// ANIMACIÓN DE PROVEEDOR — NO bloquea el loop
+// Dibuja sobre el canvas sin tocar despachando
 // =====================
-function proveedor(cd, index){
-  if(cd.pendiente) return;
+function animateProveedor(cdIndex) {
+  const p1 = pos.proveedor;
+  const p2 = pos.cds[cdIndex];
+  let t = 0;
 
+  function frame() {
+    // Solo dibuja el punto viajando, no redibuja la base
+    // para no interferir con animaciones de despacho en curso
+    const x = p1.x + (p2.x - p1.x) * t;
+    const y = p1.y + (p2.y - p1.y) * t;
+
+    // Dibuja solo el marcador magenta sin limpiar canvas
+    ctx.fillStyle = "magenta";
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill();
+
+    t += 0.03;
+    if (t < 1) requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+// =====================
+// REPOSICIÓN — no bloquea despachos
+// =====================
+function solicitarProveedor(cd, index) {
+  if (cd.pendiente) return;
   cd.pendiente = true;
-
-  log(`proveedor → ${cd.nombre}`);
-
-  animateRoute([
-    pos.proveedor,
-    pos.cds[index]
-  ]);
-
-  setTimeout(()=>{
-    cd.stock += 500;
+  log(`Proveedor → ${cd.nombre} (EOQ: ${cd.EOQ})`);
+  animateProveedor(index); // animación decorativa, no bloquea
+  setTimeout(() => {
+    cd.Inv += cd.EOQ;
     cd.pendiente = false;
-    log(`reposición ${cd.nombre}`);
-  },24000);
+    log(`Reposición llegó a ${cd.nombre} +${cd.EOQ}`);
+    render();
+  }, 72000);
+}
+
+// =====================
+// HELPER
+// =====================
+function elegirCD(cantidad) {
+  const disponibles = cds
+    .map((cd, i) => ({ cd, i }))
+    .filter(({ cd }) => cd.Inv >= cantidad);
+  if (!disponibles.length) return null;
+  return disponibles[Math.floor(Math.random() * disponibles.length)];
 }
 
 // =====================
 // SIMULACIÓN
 // =====================
-function step(){
-  if(animando) return;
-
+function step() {
   hora++;
 
-  const iCD=Math.floor(Math.random()*cds.length);
-  const cd=cds[iCD];
+  // Revisar reposiciones (no bloquea, no afecta hora)
+  cds.forEach((cd, i) => {
+    if (cd.Inv <= cd.ROP && !cd.pendiente) solicitarProveedor(cd, i);
+  });
 
-  if(cd.stock>cd.seguridad || cd.pendiente){
+  // Paso 1: ¿Despacho directo CD o hacia EE?
+  const esDesdeEE = Math.random() > 0.5;
 
-    const usarCC=Math.random()>0.5;
-    let cantidad = Math.floor(Math.random() * 100) + 1;
-
-    let ee = getEEValido(cantidad);
-
-    // si no existe EE válido, no hacer nada
-    if(!ee){
-    log(`Sin demanda suficiente`);
-     return;
+  if (!esDesdeEE) {
+    // DESPACHO DIRECTO: cliente en instalación del CD
+    const cantidad = Math.floor(Math.random() * 60) + 10;
+    const origen = elegirCD(cantidad);
+    if (!origen) {
+      log("Despacho directo: ningún CD con inventario suficiente");
+      return;
     }
+    origen.cd.Inv -= cantidad;
+    log(`Despacho directo: ${origen.cd.nombre} → ${origen.cd.nombre}: ${cantidad}`);
+    // Pulso visual sin bloquear
+    ctx.fillStyle = "rgba(0,255,255,0.4)";
+    ctx.beginPath(); ctx.arc(pos.cds[origen.i].x, pos.cds[origen.i].y, 20, 0, Math.PI*2); ctx.fill();
+    render();
+    return;
+  }
 
-    // obtener índice real
-    const iEE = ees.indexOf(ee);
+  // DESPACHO HACIA EE
+  const iEE = Math.floor(Math.random() * ees.length);
+  const ee  = ees[iEE];
+  let cantidad = Math.floor(Math.random() * 60) + 10;
+  cantidad = Math.min(cantidad, ee.demanda);
 
-    // ajustar por stock del CD
-    cantidad = Math.min(cantidad, cd.stock);
+  if (cantidad <= 0) {
+    log(`${ee.nombre} sin demanda disponible`);
+    return;
+  }
 
-    if(cantidad>0){
+  const usarCC = Math.random() > 0.5;
+  const origen = elegirCD(cantidad);
 
-      cd.stock-=cantidad;
-      ee.demanda-=cantidad;
+  if (!origen) {
+    log(`Ningún CD con inventario suficiente para ${cantidad} → ${ee.nombre}`);
+    return;
+  }
 
-      if(usarCC){
-        const iCC=Math.floor(Math.random()*ccs.length);
+  origen.cd.Inv -= cantidad;
+  ee.demanda    -= cantidad;
 
-        animateRoute([
-          pos.cds[iCD],
-          pos.ccs[iCC],
-          pos.ees[iEE]
-        ]);
-
-        log(`${cd.nombre} → ${ccs[iCC].nombre} → ${ee.nombre} : ${cantidad}`);
-
-      }else{
-
-        animateRoute([
-          pos.cds[iCD],
-          pos.ees[iEE]
-        ]);
-
-        log(`${cd.nombre} → ${ee.nombre} : ${cantidad}`);
-      }
-    }
-
-  }else{
-    proveedor(cd, iCD);
+  if (usarCC) {
+    const iCC = Math.floor(Math.random() * ccs.length);
+    log(`${origen.cd.nombre} → ${ccs[iCC].nombre} → ${ee.nombre} : ${cantidad}`);
+    animateDespacho([pos.cds[origen.i], pos.ccs[iCC], pos.ees[iEE]], "lime");
+  } else {
+    log(`${origen.cd.nombre} → ${ee.nombre} : ${cantidad}`);
+    animateDespacho([pos.cds[origen.i], pos.ees[iEE]], "lime");
   }
 
   render();
 }
 
-function getEEValido(cantidad){
-  const candidatos = ees.filter(ee => ee.demanda >= cantidad);
-
-  if(candidatos.length === 0) return null;
-
-  return candidatos[Math.floor(Math.random() * candidatos.length)];
+// =====================
+// LOOP — solo bloquea en animaciones de despacho
+// =====================
+function loop() {
+  if (running && !despachando) step();
+  setTimeout(loop, 1000);
 }
 
-// =====================
-// LOOP CONTROLADO
-// =====================
-function loop(){
-  if(running && !animando){
-    step();
-  }
-  setTimeout(loop, 2000);
-}
+function toggleSim() { running = !running; }
 
-function toggleSim(){
-  running = !running;
-}
-
-// =====================
 render();
 drawBase();
 loop();
-
 </script>
-
 </body>
 </html>
