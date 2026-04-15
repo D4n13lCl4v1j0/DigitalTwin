@@ -25,8 +25,11 @@ button { padding:10px; margin-bottom:10px; cursor:pointer; }
 <h3>Centros de Distribución</h3>
 <div class="row" id="cds"></div>
 
+<h3>Tienda</h3>
+<div class="row" id="tiendaUI"></div>
+
 <h3>Red Logística</h3>
-<canvas id="network" width="900" height="350"></canvas>
+<canvas id="network" width="900" height="420"></canvas>
 
 <h3>Estaciones de Entrega</h3>
 <div class="row" id="ees"></div>
@@ -39,19 +42,35 @@ button { padding:10px; margin-bottom:10px; cursor:pointer; }
 // MODELOS
 // =====================
 class CD {
-  constructor(nombre, stock_seguridad, demanda, EOQ, lead_time, capacidad) {
+  constructor(nombre, stock_seguridad, EOQ, lead_time, capacidad, ventaPromedioDiaria) {
     this.nombre = nombre;
     this.stock = stock_seguridad;
     this.Inv = EOQ;
-    this.demanda = demanda;
     this.EOQ = EOQ;
     this.lead_time = lead_time;
     this.capacidad = capacidad;
-    this.ROP = stock_seguridad + (demanda * lead_time);
+    this.ventaPromedioDiaria = ventaPromedioDiaria;
+    this.ROP = stock_seguridad + (ventaPromedioDiaria * lead_time);
     this.pendiente = false;
   }
 }
+
+class Tienda {
+  constructor(nombre, stock_seguridad, EOQ, lead_time, capacidad, ventaPromedioDiaria) {
+    this.nombre = nombre;
+    this.stock = stock_seguridad;
+    this.Inv = EOQ;
+    this.EOQ = EOQ;
+    this.lead_time = lead_time;
+    this.capacidad = capacidad;
+    this.ventaPromedioDiaria = ventaPromedioDiaria;
+    this.ROP = stock_seguridad + (ventaPromedioDiaria * lead_time);
+    this.pendiente = false;
+  }
+}
+
 class CC { constructor(nombre) { this.nombre = nombre; } }
+
 class EE {
   constructor(nombre, demanda, capacidad) {
     this.nombre = nombre; this.demanda = demanda; this.capacidad = capacidad;
@@ -60,19 +79,24 @@ class EE {
 
 // =====================
 // DATA
+// constructor(nombre, stock_seguridad, EOQ, lead_time, capacidad, ventaPromedioDiaria)
 // =====================
 const cds = [
-  new CD("CD1-Nuevo León",       123, 2000, 2000, 0.1,  4000),
-  new CD("CD2-Estado de México", 185, 3000, 1897, 0.1,  6000),
-  new CD("CD3-Baja California",  247, 4000, 3347, 0.1,  8000),
-  new CD("CD4-Yucatán",          308, 5000, 2309, 0.1, 10000),
-  new CD("CD5-Jalisco",          339, 5500, 2225, 0.1, 11000)
+  new CD("CD1-Nuevo León",       123, 2000, 0.1,  4000,  500),
+  new CD("CD2-Estado de México", 185, 1897, 0.1,  6000,  700),
+  new CD("CD3-Baja California",  247, 3347, 0.1,  8000,  900),
+  new CD("CD4-Yucatán",          308, 2309, 0.1, 10000, 1100),
+  new CD("CD5-Jalisco",          339, 2225, 0.1, 11000, 1200)
 ];
+
+const tienda = new Tienda("Tienda Central", 50, 500, 0.05, 1000, 200);
+
 const ccs = [
   new CC("CC1-Estado de México"),
   new CC("CC2-Queretaro"),
   new CC("CC3-Monterrey")
 ];
+
 const ees = [
   new EE("EE1",  7000,  8400),
   new EE("EE2",  8000,  9600),
@@ -83,39 +107,44 @@ const ees = [
 
 let hora = 0;
 let running = false;
-
-// Flag SOLO para animaciones de despacho (no de proveedor)
 let despachando = false;
 
+// =====================
+// POSICIONES
+// Canvas ahora es 900x420 para dar espacio al nodo tienda
+// =====================
 const pos = {
-  proveedor: { x: 50, y: 180 },
-  cds: cds.map((_,i) => ({ x: 120, y: 50 + i * 60 })),
-  ccs: ccs.map((_,i) => ({ x: 450, y: 80 + i * 80 })),
-  ees: ees.map((_,i) => ({ x: 800, y: 50 + i * 60 }))
+  proveedor: { x: 50, y: 150 },
+  tienda:    { x: 50, y: 330 },
+  cds: cds.map((_,i) => ({ x: 180, y: 40 + i * 65 })),
+  ccs: ccs.map((_,i) => ({ x: 480, y: 80 + i * 100 })),
+  ees: ees.map((_,i) => ({ x: 820, y: 40 + i * 65 }))
 };
 
 // =====================
 // UI
 // =====================
-function render() {
-  document.getElementById("cds").innerHTML = cds.map(cd => {
-    let cls = "ok", mensaje = "";
-    if (cd.Inv <= cd.stock) {
-      cls = "danger";
-      mensaje = cd.pendiente ? "Reposición en camino" : "Solicitando proveedor";
-    } else if (cd.Inv < cd.ROP) {
-      cls = "warn";
-      mensaje = cd.pendiente ? "Reposición en camino" : "Stock medio";
-    }
-    return `<div class="card">
-      <b>${cd.nombre}</b>
-      <div>Inventario: ${Math.round(cd.Inv)}</div>
-      <div>ROP: ${Math.round(cd.ROP)}</div>
-      <div class="bar"><div class="bar-inner ${cls}" style="width:${Math.min(100, cd.Inv/cd.capacidad*100)}%"></div></div>
-      <div style="font-size:11px;margin-top:5px;">${mensaje}</div>
-    </div>`;
-  }).join("");
+function renderCard(nodo) {
+  let cls = "ok", mensaje = "";
+  if (nodo.Inv <= nodo.stock) {
+    cls = "danger";
+    mensaje = nodo.pendiente ? "Reposición en camino" : "Solicitando proveedor";
+  } else if (nodo.Inv < nodo.ROP) {
+    cls = "warn";
+    mensaje = nodo.pendiente ? "Reposición en camino" : "Stock medio";
+  }
+  return `<div class="card">
+    <b>${nodo.nombre}</b>
+    <div>Inventario: ${Math.round(nodo.Inv)}</div>
+    <div>ROP: ${Math.round(nodo.ROP)}</div>
+    <div class="bar"><div class="bar-inner ${cls}" style="width:${Math.min(100, nodo.Inv/nodo.capacidad*100)}%"></div></div>
+    <div style="font-size:11px;margin-top:5px;">${mensaje}</div>
+  </div>`;
+}
 
+function render() {
+  document.getElementById("cds").innerHTML = cds.map(renderCard).join("");
+  document.getElementById("tiendaUI").innerHTML = renderCard(tienda);
   document.getElementById("ees").innerHTML = ees.map(ee =>
     `<div class="card"><b>${ee.nombre}</b><div>Demanda: ${ee.demanda}</div></div>`
   ).join("");
@@ -135,7 +164,8 @@ const ctx = canvas.getContext("2d");
 function drawBase() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = "11px Arial";
-  drawNode(pos.proveedor, "white", "PROV");
+  drawNode(pos.proveedor, "white",  "PROV");
+  drawNode(pos.tienda,    "#a78bfa", tienda.nombre);
   cds.forEach((cd, i) => drawNode(pos.cds[i], "cyan",   cd.nombre));
   ccs.forEach((cc, i) => drawNode(pos.ccs[i], "yellow", cc.nombre));
   ees.forEach((ee, i) => drawNode(pos.ees[i], "orange", ee.nombre));
@@ -149,7 +179,7 @@ function drawNode(p, color, text) {
 }
 
 // =====================
-// ANIMACIÓN DE DESPACHO — bloquea el loop
+// ANIMACIÓN DE DESPACHO — bloquea loop
 // =====================
 function animateDespacho(points, color, callback) {
   despachando = true;
@@ -186,24 +216,17 @@ function animateDespacho(points, color, callback) {
 }
 
 // =====================
-// ANIMACIÓN DE PROVEEDOR — NO bloquea el loop
-// Dibuja sobre el canvas sin tocar despachando
+// ANIMACIÓN DE PROVEEDOR — NO bloquea loop
 // =====================
-function animateProveedor(cdIndex) {
+function animateProveedor(destPos) {
   const p1 = pos.proveedor;
-  const p2 = pos.cds[cdIndex];
+  const p2 = destPos;
   let t = 0;
-
   function frame() {
-    // Solo dibuja el punto viajando, no redibuja la base
-    // para no interferir con animaciones de despacho en curso
     const x = p1.x + (p2.x - p1.x) * t;
     const y = p1.y + (p2.y - p1.y) * t;
-
-    // Dibuja solo el marcador magenta sin limpiar canvas
     ctx.fillStyle = "magenta";
     ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill();
-
     t += 0.03;
     if (t < 1) requestAnimationFrame(frame);
   }
@@ -211,23 +234,23 @@ function animateProveedor(cdIndex) {
 }
 
 // =====================
-// REPOSICIÓN — no bloquea despachos
+// REPOSICIÓN GENÉRICA — sirve para CD y Tienda
 // =====================
-function solicitarProveedor(cd, index) {
-  if (cd.pendiente) return;
-  cd.pendiente = true;
-  log(`Proveedor → ${cd.nombre} (EOQ: ${cd.EOQ})`);
-  animateProveedor(index); // animación decorativa, no bloquea
+function solicitarReposicion(nodo, destPos, leadTimeMs) {
+  if (nodo.pendiente) return;
+  nodo.pendiente = true;
+  log(`Proveedor → ${nodo.nombre} (EOQ: ${nodo.EOQ})`);
+  animateProveedor(destPos);
   setTimeout(() => {
-    cd.Inv += cd.EOQ;
-    cd.pendiente = false;
-    log(`Reposición llegó a ${cd.nombre} +${cd.EOQ}`);
+    nodo.Inv += nodo.EOQ;
+    nodo.pendiente = false;
+    log(`Reposición llegó a ${nodo.nombre} +${nodo.EOQ}`);
     render();
-  }, 72000);
+  }, leadTimeMs);
 }
 
 // =====================
-// HELPER
+// HELPER — elegir CD con stock suficiente
 // =====================
 function elegirCD(cantidad) {
   const disponibles = cds
@@ -243,67 +266,116 @@ function elegirCD(cantidad) {
 function step() {
   hora++;
 
-  // Revisar reposiciones (no bloquea, no afecta hora)
+  // --- Revisar reposiciones de todos los CDs ---
   cds.forEach((cd, i) => {
-    if (cd.Inv <= cd.ROP && !cd.pendiente) solicitarProveedor(cd, i);
+    if (cd.Inv <= cd.ROP && !cd.pendiente)
+      solicitarReposicion(cd, pos.cds[i], 72000); // lead time 3 días
   });
 
-  // Paso 1: ¿Despacho directo CD o hacia EE?
-  const esDesdeEE = Math.random() > 0.5;
+  // --- Revisar reposición de la Tienda ---
+  if (tienda.Inv <= tienda.ROP && !tienda.pendiente)
+    solicitarReposicion(tienda, pos.tienda, 36000); // lead time ~1.5 días (más corto)
 
-  if (!esDesdeEE) {
-    // DESPACHO DIRECTO: cliente en instalación del CD
-    const cantidad = Math.floor(Math.random() * 60) + 10;
-    const origen = elegirCD(cantidad);
-    if (!origen) {
-      log("Despacho directo: ningún CD con inventario suficiente");
+  // --- Paso 1: ¿Venta en Tienda o despacho hacia EE? ---
+  const esVentaTienda = Math.random() > 0.7; // 30% ventas en tienda, 70% despacho a EE
+
+ if (esVentaTienda) {
+
+  const esEnvioEE = Math.random() > 0.5; // 50% probabilidad
+
+  if (!esEnvioEE) {
+    // VENTA NORMAL EN TIENDA
+    const cantidad = Math.floor(tienda.ventaPromedioDiaria / 5 * (0.8 + Math.random() * 0.4));
+
+    if (tienda.Inv < cantidad) {
+      log(`Tienda sin stock suficiente (${Math.round(tienda.Inv)} < ${cantidad})`);
       return;
     }
-    origen.cd.Inv -= cantidad;
-    log(`Despacho directo: ${origen.cd.nombre} → ${origen.cd.nombre}: ${cantidad}`);
-    // Pulso visual sin bloquear
-    ctx.fillStyle = "rgba(0,255,255,0.4)";
-    ctx.beginPath(); ctx.arc(pos.cds[origen.i].x, pos.cds[origen.i].y, 20, 0, Math.PI*2); ctx.fill();
+
+    tienda.Inv -= cantidad;
+    log(`Venta tienda: ${tienda.nombre} → Cliente : ${cantidad}`);
+
+    ctx.fillStyle = "rgba(167,139,250,0.5)";
+    ctx.beginPath();
+    ctx.arc(pos.tienda.x, pos.tienda.y, 20, 0, Math.PI*2);
+    ctx.fill();
+
+    render();
+    return;
+
+  } else {
+    // TIENDA → EE
+    const iEE = Math.floor(Math.random() * ees.length);
+    const ee  = ees[iEE];
+
+    let cantidad = Math.round(tienda.ventaPromedioDiaria / 5 * (0.8 + Math.random() * 0.4));
+    cantidad = Math.min(cantidad, ee.demanda);
+    cantidad = Math.min(cantidad, tienda.Inv);
+
+    if (cantidad <= 0) {
+      log(` ${ee.nombre} sin demanda o tienda sin stock`);
+      return;
+    }
+
+    tienda.Inv -= cantidad;
+    ee.demanda -= cantidad;
+
+    log(`${tienda.nombre} → ${ee.nombre} : ${cantidad}`);
+
+    animateDespacho([pos.tienda, pos.ees[iEE]], "#a78bfa");
+
     render();
     return;
   }
+}
 
-  // DESPACHO HACIA EE
+  // --- DESPACHO HACIA EE ---
   const iEE = Math.floor(Math.random() * ees.length);
   const ee  = ees[iEE];
-  let cantidad = Math.floor(Math.random() * 60) + 10;
+
+  // Elegir CD primero para usar su ventaPromedioDiaria/5 como cantidad base
+  // Se elige un CD válido; si no hay ninguno, se aborta
+  // Intentamos con una cantidad estimada pequeña para elegir CD y luego usamos su VPD
+  const cdCandidatos = cds
+    .map((cd, i) => ({ cd, i }))
+    .filter(({ cd }) => cd.Inv > 0);
+
+  if (!cdCandidatos.length) {
+    log(`Todos los CDs sin inventario`);
+    return;
+  }
+
+  const { cd: cdElegido, i: iCD } = cdCandidatos[Math.floor(Math.random() * cdCandidatos.length)];
+
+  // Cantidad basada en venta promedio diaria del CD elegido / 5
+  let cantidad = Math.round(cdElegido.ventaPromedioDiaria / 5 * (0.8 + Math.random() * 0.4));
   cantidad = Math.min(cantidad, ee.demanda);
+  cantidad = Math.min(cantidad, cdElegido.Inv);
 
   if (cantidad <= 0) {
-    log(`${ee.nombre} sin demanda disponible`);
+    log(`${ee.nombre} sin demanda o ${cdElegido.nombre} sin stock`);
     return;
   }
 
   const usarCC = Math.random() > 0.5;
-  const origen = elegirCD(cantidad);
 
-  if (!origen) {
-    log(`Ningún CD con inventario suficiente para ${cantidad} → ${ee.nombre}`);
-    return;
-  }
-
-  origen.cd.Inv -= cantidad;
+  cdElegido.Inv -= cantidad;
   ee.demanda    -= cantidad;
 
   if (usarCC) {
     const iCC = Math.floor(Math.random() * ccs.length);
-    log(`${origen.cd.nombre} → ${ccs[iCC].nombre} → ${ee.nombre} : ${cantidad}`);
-    animateDespacho([pos.cds[origen.i], pos.ccs[iCC], pos.ees[iEE]], "lime");
+    log(`${cdElegido.nombre} → ${ccs[iCC].nombre} → ${ee.nombre} : ${cantidad}`);
+    animateDespacho([pos.cds[iCD], pos.ccs[iCC], pos.ees[iEE]], "lime");
   } else {
-    log(`${origen.cd.nombre} → ${ee.nombre} : ${cantidad}`);
-    animateDespacho([pos.cds[origen.i], pos.ees[iEE]], "lime");
+    log(`${cdElegido.nombre} → ${ee.nombre} : ${cantidad}`);
+    animateDespacho([pos.cds[iCD], pos.ees[iEE]], "lime");
   }
 
   render();
 }
 
 // =====================
-// LOOP — solo bloquea en animaciones de despacho
+// LOOP
 // =====================
 function loop() {
   if (running && !despachando) step();
